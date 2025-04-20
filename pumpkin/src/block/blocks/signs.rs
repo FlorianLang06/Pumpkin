@@ -16,6 +16,7 @@ use crate::server::Server;
 use crate::world::World;
 
 type SignProperties = pumpkin_data::block::OakSignLikeProperties;
+type WallSignProps = pumpkin_data::block::LadderLikeProperties;
 
 pub struct SignBlock;
 
@@ -36,12 +37,32 @@ impl PumpkinBlock for SignBlock {
         _server: &Server,
         _world: &World,
         block: &Block,
-        _face: &BlockDirection,
+        face: &BlockDirection,
         _block_pos: &BlockPos,
         _use_item_on: &SUseItemOn,
         _player: &Player,
         _other: bool,
     ) -> u16 {
+        if face.is_horizontal() {
+            let wall_block = match get_wall_block(block) {
+                Some(b) => b,
+                None => {
+                    log::error!("Failed to get the wall sign for {}", block.name);
+
+                    Block::OAK_WALL_SIGN
+                }
+            };
+            let mut props = WallSignProps::default(&wall_block);
+            props.facing = match face.to_horizontal_facing() {
+                Some(f) => f.opposite(),
+                None => {
+                    log::error!("Failed to get horizontal facing for sign");
+                    return wall_block.default_state_id;
+                }
+            };
+            return props.to_state_id(&wall_block);
+        }
+
         let sign_props = SignProperties::default(block);
 
         sign_props.to_state_id(block)
@@ -82,5 +103,17 @@ impl PumpkinBlock for SignBlock {
         _moved: bool,
     ) {
         world.remove_block_entity(&location).await;
+    }
+}
+
+fn get_wall_block(block: &Block) -> Option<Block> {
+    match block.name.chars().rev().position(|c| c == '_') {
+        Some(rev_index) => {
+            let index = block.name.chars().count() - rev_index - 1;
+            let sign_type = &block.name[..index];
+            let wall_block_name = format!("{}_wall_sign", &sign_type);
+            Block::from_registry_key(wall_block_name.as_str())
+        }
+        None => None,
     }
 }
