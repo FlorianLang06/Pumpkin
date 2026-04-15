@@ -20,6 +20,11 @@ pub struct WasmCommandExecutor {
     pub server: Arc<Server>,
 }
 
+pub struct WasmRequireHandler {
+    pub handler_id: u32,
+    pub plugin: Arc<WasmPlugin>,
+}
+
 impl CommandExecutor for WasmCommandExecutor {
     fn execute<'a>(
         &'a self,
@@ -76,5 +81,22 @@ impl CommandExecutor for WasmCommandExecutor {
                 }
             }
         })
+    }
+}
+
+impl WasmRequireHandler {
+    pub async fn handle(&self, sender: &crate::command::CommandSender) -> bool {
+        let mut store = self.plugin.store.lock().await;
+
+        let sender_resource = store.data_mut().add_command_sender(sender.clone()).unwrap();
+
+        match self.plugin.plugin_instance {
+            PluginInstance::V0_1_0(ref plugin) => {
+                plugin
+                    .call_handle_require(&mut *store, self.handler_id, sender_resource)
+                    .await
+                    .unwrap_or(false)
+            }
+        }
     }
 }

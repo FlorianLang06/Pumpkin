@@ -60,6 +60,9 @@ world plugin {
     /// Dispatches a command execution to the plugin.
     export handle-command: func(command-id: u32, sender: command-sender, server: server-instance, args: consumed-args) -> result<s32, command-error>;
 
+    /// Dispatches a command requirement check to the plugin.
+    export handle-require: func(handler-id: u32, sender: command-sender) -> bool;
+
     /// Dispatches a scheduled task execution to the plugin.
     export handle-task: func(handler-id: u32, server: server-instance);
 }

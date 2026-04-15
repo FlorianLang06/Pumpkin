@@ -28,8 +28,8 @@
 //! ```
 
 use crate::{
-    commands::COMMAND_HANDLERS, events::EVENT_HANDLERS, logging::WitSubscriber,
-    scheduler::TASK_HANDLERS, text::TextComponent,
+    commands::{COMMAND_HANDLERS, REQUIRE_HANDLERS}, events::EVENT_HANDLERS,
+    logging::WitSubscriber, scheduler::TASK_HANDLERS, text::TextComponent,
 };
 
 pub mod commands;
@@ -136,6 +136,16 @@ impl wit::Guest for Component {
             Err(command::CommandError::CommandFailed(TextComponent::text(
                 &format!("no handler registered for command id {command_id}"),
             )))
+        }
+    }
+
+    /// WIT entry point — dispatches an incoming command requirement check to the registered handler for `handler_id`.
+    fn handle_require(handler_id: u32, sender: command::CommandSender) -> bool {
+        let handlers = REQUIRE_HANDLERS.lock().unwrap();
+        if let Some(handler) = handlers.get(&handler_id) {
+            handler.handle(sender)
+        } else {
+            false
         }
     }
 

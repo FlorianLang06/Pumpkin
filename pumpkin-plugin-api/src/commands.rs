@@ -16,6 +16,8 @@ use crate::{
 pub(crate) static NEXT_COMMAND_ID: AtomicU32 = AtomicU32::new(0);
 pub(crate) static COMMAND_HANDLERS: Mutex<BTreeMap<u32, Box<dyn CommandHandler>>> =
     Mutex::new(BTreeMap::new());
+pub(crate) static REQUIRE_HANDLERS: Mutex<BTreeMap<u32, Box<dyn RequireHandler>>> =
+    Mutex::new(BTreeMap::new());
 
 /// Handles the execution of a registered command.
 ///
@@ -37,6 +39,19 @@ pub trait CommandHandler: Send + Sync {
     ) -> Result<i32, CommandError>;
 }
 
+/// Handles the requirement check for a registered command.
+///
+/// Implement this trait to define the logic that runs when a command is checked for
+/// requirements.
+/// The return value is a boolean indicating whether the requirement is met.
+pub trait RequireHandler: Send + Sync {
+    /// Checks the requirement.
+    ///
+    /// # Arguments
+    /// - `sender` — who invoked the command (player or console).
+    fn handle(&self, sender: CommandSender) -> bool;
+}
+
 impl Command {
     /// Attaches an execution handler to this command.
     ///
@@ -51,6 +66,24 @@ impl Command {
             .insert(id, Box::new(handler));
 
         self.execute_with_handler_id(id);
+
+        self
+    }
+
+    /// Attaches a requirement handler to this command.
+    ///
+    /// Registers `handler` so that it is called to check if the sender meets the
+    /// requirement to invoke this command.
+    /// Returns `self` to allow builder-style chaining.
+    pub fn require<H: RequireHandler + Send + Sync + 'static>(self, handler: H) -> Command {
+        let id = NEXT_COMMAND_ID.fetch_add(1, Ordering::Relaxed);
+
+        REQUIRE_HANDLERS
+            .lock()
+            .unwrap()
+            .insert(id, Box::new(handler));
+
+        self.require_with_handler_id(id);
 
         self
     }
@@ -71,6 +104,24 @@ impl CommandNode {
             .insert(id, Box::new(handler));
 
         self.execute_with_handler_id(id);
+
+        self
+    }
+
+    /// Attaches a requirement handler to this command node.
+    ///
+    /// Registers `handler` so that it is called to check if the sender meets the
+    /// requirement to reach this node (subcommand or argument branch).
+    /// Returns `self` to allow builder-style chaining.
+    pub fn require<H: RequireHandler + Send + Sync + 'static>(self, handler: H) -> CommandNode {
+        let id = NEXT_COMMAND_ID.fetch_add(1, Ordering::Relaxed);
+
+        REQUIRE_HANDLERS
+            .lock()
+            .unwrap()
+            .insert(id, Box::new(handler));
+
+        self.require_with_handler_id(id);
 
         self
     }

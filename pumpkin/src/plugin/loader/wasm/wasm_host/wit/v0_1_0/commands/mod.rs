@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use wasmtime::component::Resource;
 
 use crate::{
@@ -330,6 +331,34 @@ impl pumpkin::plugin::command::HostCommand for PluginHostState {
         Ok(())
     }
 
+    async fn require_with_handler_id(
+        &mut self,
+        command: Resource<Command>,
+        handler_id: u32,
+    ) -> wasmtime::Result<()> {
+        let plugin = self
+            .plugin
+            .as_ref()
+            .and_then(std::sync::Weak::upgrade)
+            .ok_or_else(|| wasmtime::Error::msg("Plugin dropped"))?;
+
+        let handler = Arc::new(executor::WasmRequireHandler { handler_id, plugin });
+        let command_res = self.get_command_mut(&command)?;
+        command_res.provider =
+            command_res
+                .provider
+                .clone()
+                .then(crate::command::tree::builder::require(move |sender| {
+                    let handler = handler.clone();
+                    let sender = sender.clone();
+                    tokio::task::block_in_place(move || {
+                        tokio::runtime::Handle::current()
+                            .block_on(async move { handler.handle(&sender).await })
+                    })
+                }));
+        Ok(())
+    }
+
     async fn drop(&mut self, rep: Resource<Command>) -> wasmtime::Result<()> {
         self.resource_table
             .delete::<CommandResource>(Resource::new_own(rep.rep()))
@@ -607,10 +636,27 @@ impl pumpkin::plugin::command::HostCommandNode for PluginHostState {
 
     async fn require_with_handler_id(
         &mut self,
-        _node: Resource<CommandNode>,
-        _handler_id: u32,
+        node: Resource<CommandNode>,
+        handler_id: u32,
     ) -> wasmtime::Result<()> {
-        todo!("Implement require_with_handler_id")
+        let plugin = self
+            .plugin
+            .as_ref()
+            .and_then(std::sync::Weak::upgrade)
+            .ok_or_else(|| wasmtime::Error::msg("Plugin dropped"))?;
+
+        let handler = Arc::new(executor::WasmRequireHandler { handler_id, plugin });
+        let resource = self.get_node_mut(&node)?;
+        let builder = std::mem::replace(&mut resource.provider, literal(""));
+        resource.provider = builder.then(crate::command::tree::builder::require(move |sender| {
+            let handler = handler.clone();
+            let sender = sender.clone();
+            tokio::task::block_in_place(move || {
+                tokio::runtime::Handle::current()
+                    .block_on(async move { handler.handle(&sender).await })
+            })
+        }));
+        Ok(())
     }
 
     async fn drop(&mut self, rep: Resource<CommandNode>) -> wasmtime::Result<()> {
